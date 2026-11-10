@@ -268,7 +268,7 @@ function leadImportHistory(imports) {
       display(batch.updated), display(batch.unchanged), display(batch.duplicates),
     ]))
     : el('p', 'No saved CRM record imports yet.', 'help');
-  return ChartPanel('CRM import history', 'Accepted records and corrections for this site', body);
+  return ReportDisclosure('CRM import history', body);
 }
 
 function renderLeads() {

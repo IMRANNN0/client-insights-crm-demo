@@ -1,16 +1,14 @@
 const $ = id => document.getElementById(id);
 
 const themeKey = 'client-insights-theme';
-const systemTheme = window.matchMedia?.('(prefers-color-scheme: dark)');
-let savedTheme;
+let initialTheme = 'light';
 try {
-  savedTheme = window.localStorage?.getItem(themeKey);
+  if (window.localStorage?.getItem(themeKey) === 'dark') initialTheme = 'dark';
 } catch {
   // Storage can be disabled by the browser.
 }
-if (savedTheme !== 'light' && savedTheme !== 'dark') savedTheme = undefined;
 const themeRoot = document.documentElement;
-if (themeRoot) themeRoot.dataset.theme = savedTheme || (systemTheme?.matches ? 'dark' : 'light');
+if (themeRoot) themeRoot.dataset.theme = initialTheme;
 
 function initializeTheme() {
   if (!themeRoot) return;
@@ -23,16 +21,13 @@ function initializeTheme() {
   };
   apply(themeRoot.dataset.theme);
   control.addEventListener('click', () => {
-    savedTheme = themeRoot.dataset.theme === 'dark' ? 'light' : 'dark';
-    apply(savedTheme);
+    const theme = themeRoot.dataset.theme === 'dark' ? 'light' : 'dark';
+    apply(theme);
     try {
-      window.localStorage.setItem(themeKey, savedTheme);
+      window.localStorage.setItem(themeKey, theme);
     } catch {
       // The theme still applies for the current page.
     }
-  });
-  systemTheme?.addEventListener?.('change', event => {
-    if (!savedTheme) apply(event.matches ? 'dark' : 'light');
   });
 }
 
@@ -93,10 +88,18 @@ function periodLabel(dates) {
   return dates?.length === 2 ? dates.join(' → ') : 'Unavailable';
 }
 
+const reportDate = new Intl.DateTimeFormat('en', {month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'});
+
+function readablePeriod(dates) {
+  if (dates?.length !== 2) return 'Unavailable';
+  const [start, end] = dates.map(day => new Date(day));
+  return reportDate.formatRange?.(start, end) ?? periodLabel(dates);
+}
+
 function ComparisonControl(report, enabled, visible) {
   $('compare-control').hidden = !visible;
   $('period-comparison').textContent = visible && enabled
-    ? `Previous period ${periodLabel(report.previous_dates)}`
+    ? `Compared with ${readablePeriod(report.previous_dates)}`
     : '';
 }
 
@@ -109,20 +112,29 @@ function MetricTooltip(summary, lines) {
   return tooltip;
 }
 
-function KPIStatCard(title, value, foot, cls = '', explanation, status) {
-  const item = el('article', null, `panel stat ${cls}`);
+function KPIStatCard(title, value, source, cls = '', explanation, status) {
+  const item = el('article', null, `stat ${cls}`);
   const readableValue = value.replace(/^([A-Z]{3})\u00a0/, '$1 ');
+  const currency = /^([A-Z]{3}) (.+)$/.exec(readableValue);
   const label = el('span', title, 'stat-label');
-  const amount = el('strong', readableValue, 'stat-value');
+  const amount = el('strong', currency ? currency[2] : readableValue, 'stat-value');
+  if (currency) amount.append(el('span', ' ' + currency[1], 'stat-currency'));
   status ||= value === '—' ? 'missing' : value === 'N/A' ? 'unavailable'
     : /^(?:[A-Z]{3} )?0(?:\.0+)?[%×]?$/.test(readableValue) ? 'zero' : '';
   const states = {missing: 'No data', unavailable: 'Unavailable', partial: 'Partial data', zero: 'Recorded zero'};
+  const meta = el('div', null, 'stat-meta');
   if (status) item.dataset.status = status;
-  item.append(label, amount);
-  if (status) item.append(el('span', states[status], 'stat-state'));
-  if (typeof foot === 'string') item.append(el('small', foot));
-  else if (foot) item.append(foot);
-  if (explanation) item.append(explanation);
+  if (status) meta.append(el('span', states[status], 'badge stat-state' + (status === 'partial' ? ' warning' : ' neutral')));
+  if (explanation) {
+    const summary = explanation.querySelector('summary');
+    if (summary.textContent === 'No comparison' && (status === 'missing' || status === 'unavailable')) {
+      summary.textContent = 'Metric details';
+    }
+    summary.setAttribute('aria-label', `${title} · ${summary.textContent}`);
+    if (source) explanation.querySelector('div').append(el('p', 'Source · ' + source));
+    meta.append(explanation);
+  } else if (source) meta.append(el('small', source));
+  item.append(label, amount, meta);
   return item;
 }
 
@@ -136,6 +148,16 @@ function ChartPanel(title, description, content, action) {
   if (action) head.append(action);
   panel.append(head, content);
   return panel;
+}
+
+function ReportDisclosure(title, content) {
+  const disclosure = el('details', null, 'report-disclosure');
+  const summary = el('summary');
+  summary.append(el('span', title));
+  const body = el('div', null, 'disclosure-content');
+  body.append(content);
+  disclosure.append(summary, body);
+  return disclosure;
 }
 
 function DataTable(title, headers, rows) {
@@ -188,9 +210,11 @@ function SourceIndicator(source) {
 }
 
 function EmptyState(title, description, action, callback) {
-  const panel = el('section', null, 'panel empty');
-  panel.append(el('h2', title), el('p', description));
-  if (action) panel.append(button(action, 'primary', callback));
+  const panel = el('section', null, 'empty');
+  const copy = el('div');
+  copy.append(el('h2', title), el('p', description));
+  panel.append(copy);
+  if (action) panel.append(button(action, 'secondary', callback));
   return panel;
 }
 
@@ -206,8 +230,8 @@ function ErrorState(message, retry) {
 
 function DataQualityIndicator(label, description, complete, missing = false) {
   const row = el('div', null, 'quality-row');
-  const status = el('span', missing ? 'No data' : complete ? 'Complete' : 'Incomplete',
-    missing ? 'badge neutral' : complete ? 'badge' : 'badge warning');
+  const status = el('span', missing ? 'No data' : complete ? 'Complete' : 'Partial data',
+    missing ? 'badge' : complete ? 'badge success' : 'badge warning');
   const copy = el('div');
   copy.append(el('strong', label), el('small', description));
   row.append(copy, status);

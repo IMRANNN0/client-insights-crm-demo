@@ -96,6 +96,7 @@ function chooseClient(id) {
 function chooseSite(id) {
   state.siteId = id;
   state.acquisition = {};
+  state.overviewTrend = '';
   state.events = {};
   state.leads = {};
   state.revenueBasis = '';
@@ -247,7 +248,7 @@ function renderReport() {
   }
   for (const name of Object.keys(views)) $(name + '-report').hidden = state.view !== name;
   if (state.view === 'settings') return renderSettings();
-  $('period').textContent = 'Current period ' + periodLabel(data.dates) + (data.config?.timezone ? ' · ' + data.config.timezone : '');
+  $('period').textContent = readablePeriod(data.dates) + (data.config?.timezone ? ' · ' + data.config.timezone : '');
   if (state.view === 'acquisition') return renderAcquisition();
   if (state.view === 'funnel') return renderFunnel();
   if (state.view === 'leads') return renderLeads();
@@ -255,17 +256,23 @@ function renderReport() {
   const totals = data.current.totals;
   const ads = data.acquisition?.ads;
   const roas = ads?.ratios.roas;
-  $('cards').replaceChildren(metricCard(selected.outcome, true), metricCard('spend'), metricCard('sessions'),
+  const headline = [selected.outcome, 'spend', 'sessions'].find(metric => Number.isFinite(totals[metric]));
+  $('cards').replaceChildren(...[selected.outcome, 'spend', 'sessions'].map(metric => metricCard(metric, metric === headline)),
     KPIStatCard('Ad return (ROAS)', roas == null ? 'N/A' : `${display(roas)}×`, sourceOf('ads'), '',
       MetricTooltip('Metric details', [metricDefinition('roas')?.definition,
         ads?.money_issue || ads?.attribution_issue || (roas == null
           ? 'Requires complete ad values and positive spend.' : 'Uses verified ad-attributed revenue.')])));
   const trend = $('trend-metric');
   const choices = [...new Set([selected.outcome, 'spend', 'sessions', ...Object.keys(totals).filter(key => data.current.coverage[key]?.present)])];
-  options(trend, choices.map(key => [key, nameOf(key)]), selected.outcome);
+  options(trend, choices.map(key => [key, nameOf(key)]), overviewTrendMetric(choices, data.current.daily, state.overviewTrend));
   renderChart();
   renderQuality();
   renderDetails();
+}
+
+function overviewTrendMetric(choices, daily, preferred) {
+  if (choices.includes(preferred)) return preferred;
+  return choices.find(metric => daily.some(row => Number.isFinite(row.values[metric]))) || choices[0];
 }
 
 function svg(tag, attrs) {
@@ -298,7 +305,7 @@ function renderSeries(chart, daily, dates, metric, unit = metricDefinition(metri
   chart.replaceChildren();
   const points = daily.map(item => [item.date, item.values[metric]]).filter(([, value]) => Number.isFinite(value));
   if (!points.length) {
-    chart.append(el('p', 'No daily values for this selection.', 'muted empty-chart'));
+    chart.append(el('p', 'No daily data for this metric.', 'muted empty-chart'));
     return;
   }
   const metricName = nameOf(metric);
@@ -306,16 +313,18 @@ function renderSeries(chart, daily, dates, metric, unit = metricDefinition(metri
   legend.append(el('span', null, 'chart-key'), el('strong', metricName));
   if (source) legend.append(el('span', source));
   if (unit === 'currency' && site()?.currency) legend.append(el('span', site().currency));
-  const view = svg('svg', {viewBox: '0 0 660 255', role: 'img', 'aria-label': `Daily ${metricName} trend`});
+  const view = svg('svg', {viewBox: '0 0 760 255', role: 'img', 'aria-label': `Daily ${metricName} trend`});
   const ticks = chartTicks(points.map(([, value]) => value), unit);
   const min = ticks[0], max = ticks.at(-1);
   const y = value => 207 - 180 * (value - min) / (max - min || 1);
   const base = Date.parse(dates[0]);
   const dayCount = daysBetween(dates);
-  const x = day => dayCount === 1 ? 350 : 74 + ((Date.parse(day) - base) / 86400000) * 552 / Math.max(1, dayCount - 1);
+  const left = 58, right = 742;
+  const x = day => dayCount === 1 ? (left + right) / 2
+    : left + ((Date.parse(day) - base) / 86400000) * (right - left) / Math.max(1, dayCount - 1);
   for (const value of ticks) {
-    view.append(svg('line', {x1: 74, x2: 626, y1: y(value), y2: y(value), class: 'chart-grid'}));
-    const label = svg('text', {x: 65, y: y(value) + 4, 'text-anchor': 'end', class: 'chart-label'});
+    view.append(svg('line', {x1: left, x2: right, y1: y(value), y2: y(value), class: 'chart-grid'}));
+    const label = svg('text', {x: left - 9, y: y(value) + 4, 'text-anchor': 'end', class: 'chart-label'});
     label.textContent = new Intl.NumberFormat('en', {notation: 'compact', maximumFractionDigits: 1}).format(value);
     view.append(label);
   }
@@ -353,14 +362,18 @@ function renderSeries(chart, daily, dates, metric, unit = metricDefinition(metri
 function renderQuality() {
   const {dates, current} = state.report;
   const dayCount = daysBetween(dates);
+  let completeCount = 0;
   const checks = Object.keys(state.metrics).map(source => {
     const days = coveredDays(source, dates);
     const missing = source === 'events'
       ? state.report.events.rows.reduce((count, row) => count + row.missing_count_rows, 0)
       : state.metrics[source].reduce((count, metric) => count + (current.coverage[metric]?.missing || 0), 0);
     const detail = days ? `${days} of ${dayCount} dates recorded${missing ? ` · ${missing} missing values` : ''}` : 'No rows in this period';
-    return DataQualityIndicator(sourceOf(source), detail, days > 0 && days === dayCount && !missing, !days);
+    const complete = days > 0 && days === dayCount && !missing;
+    if (complete) completeCount++;
+    return DataQualityIndicator(sourceOf(source), detail, complete, !days);
   });
+  $('coverage-count').textContent = `${completeCount} of ${checks.length} sources complete`;
   $('quality').replaceChildren(...checks, MetricTooltip('How to read data coverage', [
     '0 is a recorded zero. A dash means no value was recorded. N/A means a metric could not be calculated for this selection.',
     'Partial data covers only part of the period or has missing values. Check coverage before comparing periods.',
@@ -398,7 +411,8 @@ function renderDetails() {
     if (item.event_sources?.length) row.append(el('small', item.event_sources.join(' · ')));
     return row;
   });
-  $('history').replaceChildren(...entries);
+  $('import-count').textContent = `${entries.length} saved ${entries.length === 1 ? 'import' : 'imports'}`;
+  $('history').replaceChildren(...(entries.length ? entries : [el('p', 'No saved imports yet.', 'help')]));
 }
 
 function openImport() {
@@ -678,7 +692,10 @@ $('date-form').addEventListener('submit', event => {
   if (state.view === 'leads') state.leads.page = 1;
   loadReport($('start').value, $('end').value);
 });
-$('trend-metric').addEventListener('change', renderChart);
+$('trend-metric').addEventListener('change', event => {
+  state.overviewTrend = event.currentTarget.value;
+  renderChart();
+});
 function initialize() {
   $('report-status').replaceChildren(LoadingState());
   refresh().then(() => {

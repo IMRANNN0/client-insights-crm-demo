@@ -59,7 +59,7 @@
       <button id="report-filter-toggle" class="secondary report-filter-toggle" type="button" aria-expanded="false" aria-controls="report-filters">Report filters</button>
       <section class="toolbar" id="report-filters" aria-label="Report filters">
         <label>Client<select id="client"></select></label>
-        <label>Site / property<select id="site"></select></label>
+        <label>Site<select id="site"></select></label>
         <button class="quiet" id="add-site">+ Site</button>
         <form id="date-form" aria-label="Reporting date range"><label>From<input id="start" type="date" required></label><label>To<input id="end" type="date" required></label><button class="secondary" type="submit">Apply dates</button></form>
         <label class="checkbox compare-control" id="compare-control"><input id="compare" type="checkbox" checked><span>Compare periods</span></label>
@@ -68,15 +68,25 @@
       <div class="section-title report-period" id="report-period" hidden><span id="period"></span><span id="period-comparison"></span></div>
       <div id="report" aria-busy="false" hidden>
         <section id="overview-report" aria-label="Performance summary">
-        <div id="cards" class="cards"></div>
-        <div class="report-grid">
-          <section class="panel trend"><div class="panel-head"><div><h2>Performance trend</h2><p>Daily results for the selected site</p></div><select aria-label="Trend metric" id="trend-metric"></select></div><div id="chart"></div></section>
-          <section class="panel"><div class="panel-head"><div><h2>Data coverage</h2><p>Dates available by source</p></div></div><div id="quality" class="quality"></div></section>
-        </div>
-        <div class="report-grid details">
-          <section class="panel"><div class="panel-head"><div><h2>Source breakdown</h2><p>Metrics grouped by their original source</p></div></div><div id="breakdown"></div></section>
-          <section class="panel"><div class="panel-head"><div><h2>Import history</h2><p>Recent changes to this site's data</p></div></div><div id="history"></div></section>
-        </div>
+          <div id="cards" class="cards"></div>
+          <section class="report-panel trend overview-trend">
+            <div class="panel-head"><h2>Performance trend</h2><select aria-label="Trend metric" id="trend-metric"></select></div>
+            <div id="chart"></div>
+          </section>
+          <section class="overview-notes" aria-label="Supporting report details">
+            <details class="report-disclosure">
+              <summary><span>Data coverage</span><small id="coverage-count"></small></summary>
+              <div id="quality" class="quality disclosure-content"></div>
+            </details>
+            <details class="report-disclosure">
+              <summary><span>Source breakdown</span></summary>
+              <div id="breakdown" class="details disclosure-content"></div>
+            </details>
+            <details class="report-disclosure">
+              <summary><span>Import history</span><small id="import-count"></small></summary>
+              <div id="history" class="disclosure-content"></div>
+            </details>
+          </section>
         </section>
         <section id="acquisition-report" aria-label="Acquisition report" hidden></section>
         <section id="funnel-report" aria-label="Funnel and events report" hidden></section>

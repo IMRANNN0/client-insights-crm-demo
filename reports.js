@@ -23,7 +23,7 @@ function comparisonTooltip(metric, value, previous, compatible, notes = []) {
   }
   const rounded = Math.round(Math.abs(change) * 100) / 100;
   const sign = rounded ? (change > 0 ? '+' : '−') : '';
-  return MetricTooltip(sign + display(rounded) + '% vs previous period', lines);
+  return MetricTooltip(sign + display(rounded) + '% vs previous', lines);
 }
 
 function reportFilter(label, items, selected, onChange) {

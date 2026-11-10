@@ -33,7 +33,7 @@ function renderFinancials() {
       'Source · ' + source, 'Date basis · ' + metric.date_basis]);
     const label = {roas: 'Ad return (ROAS)', cpl: 'Cost per lead', cac: 'Customer acquisition cost'}[key];
     cards.append(KPIStatCard(key === basis ? 'Revenue' : label || metric.label, financeValue(metric),
-      key === basis || key === 'spend' ? source : '', key === basis ? 'featured' : '', formula,
+      '', key === basis ? 'featured' : '', formula,
       metric.detail?.startsWith('Incomplete coverage') ? 'partial' : undefined));
   }
   const rows = ['spend', 'reported_revenue', 'confirmed_revenue', 'net_revenue'].map(key => {

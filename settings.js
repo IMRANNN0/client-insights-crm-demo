@@ -87,7 +87,7 @@ function sourceInventory(data) {
     const configured = data.config.source_labels[key];
     const metrics = source.metrics.map(nameOf).join(', ');
     const provenance = source.labels.join(', ') || (configured !== names[key] ? configured : '');
-    return [settingsSourceNames[key], el('span', source.rows ? 'CSV available' : 'Awaiting CSV', source.rows ? 'badge' : 'badge warning'),
+    return [settingsSourceNames[key], el('span', source.rows ? 'CSV available' : 'Awaiting CSV', source.rows ? 'badge success' : 'badge'),
       importDate(source.last_import), source.dates.length ? periodLabel(source.dates) : '—',
       [provenance, metrics].filter(Boolean).join(' · ') || '—', display(source.rows)];
   });
@@ -125,7 +125,7 @@ function importLedger(imports) {
     const warnings = item.warnings || [];
     const details = el('div', null, 'import-validation');
     const status = {passed: 'Passed', warnings: 'Warnings'}[item.validation] || 'Legacy import';
-    details.append(el('span', status, item.validation === 'passed' ? 'badge' : 'badge warning'));
+    details.append(el('span', status, item.validation === 'passed' ? 'badge success' : 'badge warning'));
     const evidence = Object.entries(item.provenance || {}).map(([field, values]) => `${nameOf(field)} · ${values.join(', ')}`);
     if (item.attribution_verified) evidence.push('Attribution verified by the import operator.');
     const summary = [];
