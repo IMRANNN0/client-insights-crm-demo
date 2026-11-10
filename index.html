@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Your private workspace for cleaning and analyzing client marketing data.">
+  <title>Client Insights CRM Demo</title>
+  <link rel="icon" href="./mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./components.js" defer></script>
+  <script src="./reports.js" defer></script>
+  <script src="./leads.js" defer></script>
+  <script src="./settings.js" defer></script>
+  <script src="./financials.js" defer></script>
+  <link rel="stylesheet" href="./pages.css">
+  <script src="./pages.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <a href="#main" class="skip-link">Skip to report</a>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><img src="./mark.svg" alt="" width="35" height="35"><div><strong>Client Insights</strong><small id="workspace-mode">PUBLIC DEMO</small></div></div>
+    <button class="secondary mobile-nav" id="menu" type="button" aria-controls="sidebar-content" aria-expanded="false">Reports</button>
+    <div id="sidebar-content">
+    <div id="workspace-identity" class="workspace-identity" hidden><strong id="workspace-business"></strong><small id="workspace-site"></small></div>
+    <div class="nav-title">REPORTS</div>
+    <nav aria-label="Reports">
+      <button id="dashboard-nav" type="button" data-view="overview" aria-current="page">Overview</button>
+      <button type="button" data-view="acquisition">Acquisition</button>
+      <button type="button" data-view="funnel">Funnel &amp; Events</button>
+      <button type="button" data-view="leads">Leads / Sales</button>
+      <button type="button" data-view="financials">Financials</button>
+    </nav>
+    <div class="nav-title manage-title">MANAGE</div>
+    <nav aria-label="Manage">
+      <button type="button" data-view="settings">Data &amp; Settings</button>
+      <button id="import-nav" type="button">Import data</button>
+    </nav>
+    <div class="client-list-head"><div class="nav-title">CLIENTS</div><button id="sidebar-add" aria-label="Add a client" title="Add a client">+</button></div>
+    <div id="client-list" class="client-list"></div>
+    <div class="local-note"><i></i><div>Public demo<small>June 8–14, 2026 · Synthetic records</small></div></div>
+    </div>
+  </aside>
+  <main id="main" tabindex="-1">
+    <header class="topbar"><span>Workspace <b>/</b> <strong id="breadcrumb">Overview</strong></span><span class="header-actions"><span id="data-mode" class="badge">Synthetic data · Read only</span><button id="add-client" class="secondary">+ New client</button></span></header>
+    <div class="page">
+      <div class="page-heading"><div><p class="eyebrow" id="page-eyebrow">BUSINESS PERFORMANCE</p><h1 id="page-title" tabindex="-1">Overview</h1><p class="subtitle" id="page-description">Review recorded performance for your selected business and site.</p></div><div class="page-actions"><button id="config-button" class="secondary" type="button" hidden>Configure reporting</button><button id="lead-status-button" class="secondary" type="button" hidden>Status mapping</button><button id="import-button" class="primary" type="button">Import CSV</button></div></div>
+      <p id="notice" role="status" class="notice" hidden></p>
+      <section class="toolbar" aria-label="Report filters">
+        <label>Client<select id="client"></select></label>
+        <label>Site / property<select id="site"></select></label>
+        <button class="quiet" id="add-site">+ Site</button>
+        <form id="date-form" aria-label="Reporting date range"><label>From<input id="start" type="date" required></label><label>To<input id="end" type="date" required></label><button class="secondary" type="submit">Apply</button></form>
+        <label class="checkbox compare-control" id="compare-control"><input id="compare" type="checkbox" checked><span>Compare</span></label>
+      </section>
+      <div id="report-status" aria-live="polite"></div>
+      <div class="section-title report-period" id="report-period" hidden><span id="period"></span><span id="period-comparison"></span></div>
+      <div id="report" aria-busy="false" hidden>
+        <section id="overview-report" aria-label="Performance summary">
+        <div id="cards" class="cards"></div>
+        <div class="report-grid">
+          <section class="panel trend"><div class="panel-head"><div><h2>Performance trend</h2><p>Daily totals for the selected site</p></div><select aria-label="Trend metric" id="trend-metric"></select></div><div id="chart"></div></section>
+          <section class="panel"><div class="panel-head"><div><h2>Data quality</h2><p>Coverage for this reporting period</p></div><span class="badge">SOURCE CHECK</span></div><div id="quality" class="quality"></div></section>
+        </div>
+        <div class="report-grid details">
+          <section class="panel"><div class="panel-head"><div><h2>Source breakdown</h2><p>Metrics grouped by their original source</p></div></div><div id="breakdown"></div></section>
+          <section class="panel"><div class="panel-head"><div><h2>Import history</h2><p>Recent changes to this site's data</p></div></div><div id="history"></div></section>
+        </div>
+        </section>
+        <section id="acquisition-report" aria-label="Acquisition report" hidden></section>
+        <section id="funnel-report" aria-label="Funnel and events report" hidden></section>
+        <section id="leads-report" aria-label="Leads and sales report" hidden></section>
+        <section id="financials-report" class="report-stack" aria-label="Financials report" hidden></section>
+        <section id="settings-report" class="report-stack" aria-label="Data and settings" hidden></section>
+      </div>
+    </div>
+  </main>
+  <dialog id="setup-dialog"><form id="setup-form"><div class="dialog-head"><h2 id="setup-title"></h2><button class="icon-button" aria-label="Close" type="button" data-close="setup-dialog">×</button></div><div id="setup-fields" class="setup-fields"></div><p class="error" id="setup-error" role="alert" hidden></p><div class="dialog-actions"><button class="secondary" type="button" data-close="setup-dialog">Cancel</button><button class="primary" type="submit">Save</button></div></form></dialog>
+  <dialog id="import-dialog"><form id="import-form">
+    <div class="dialog-head"><div><h2>Import CSV</h2><p id="import-scope"></p></div><button class="icon-button" aria-label="Close" type="button" data-close="import-dialog">×</button></div>
+    <div class="import-fields">
+      <label>Source<select id="source"><option value="ads">Ad platform</option><option value="web">Website analytics</option><option value="outcomes">CRM / Store / Affiliate network</option><option value="events">Events by source and name</option><option value="leads">CRM lead records</option></select></label>
+      <label>CSV export<input id="csv-file" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" required></label>
+      <label>Date format<select id="date-format"><option value="iso">YYYY-MM-DD</option><option value="dmy">Day / month / year</option><option value="mdy">Month / day / year</option></select></label>
+      <label>Decimal format<select id="number-format"><option value="dot">1,234.56</option><option value="comma">1 234,56</option></select></label>
+    </div>
+    <p class="help" id="import-guide">Use one consistent source and breakdown per site. Each file must contain the complete rows for every date it includes. Use a stable segment or record key when a date has multiple rows.</p>
+    <div id="mapping" class="mapping" hidden><h3>Map the columns</h3><p class="help">Only mapped columns are saved. Leave names, emails, and phone numbers unmapped.</p><div id="mapping-fields" class="import-fields"></div></div>
+    <div id="preview" class="preview" hidden></div>
+    <p id="import-error" class="error" role="alert" hidden></p>
+    <div class="dialog-actions"><button type="button" class="secondary" id="preview-button" disabled>Preview cleaning</button><button type="submit" class="primary" id="save-import" disabled>Save import</button></div>
+  </form></dialog>
+  <dialog id="config-dialog">
+    <form id="config-form">
+      <div class="dialog-head"><div><h2>Configure reporting</h2><p id="config-scope"></p></div><button class="icon-button" aria-label="Close" type="button" data-close="config-dialog">×</button></div>
+      <div id="config-fields" class="import-fields"></div>
+      <fieldset class="stage-config">
+        <legend>Funnel stages</legend>
+        <p class="help">Order the stages as they should appear in the report. Select the metric each stage uses.</p>
+        <div id="config-stages"></div>
+        <button class="secondary" id="add-stage" type="button">+ Stage</button>
+      </fieldset>
+      <p class="error" id="config-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button class="secondary" type="button" data-close="config-dialog">Cancel</button><button class="primary" type="submit">Save configuration</button></div>
+    </form>
+  </dialog>
+  <dialog id="lead-status-dialog">
+    <form id="lead-status-form">
+      <div class="dialog-head"><div><h2>Status mapping</h2><p id="lead-status-scope"></p></div><button class="icon-button" aria-label="Close" type="button" data-close="lead-status-dialog">×</button></div>
+      <p class="help">Match original CRM status labels to reporting categories. Won, Lost, and Unresponsive are separate outcomes.</p>
+      <datalist id="lead-original-statuses"></datalist>
+      <div id="lead-status-rows" class="lead-status-rows"></div>
+      <button id="lead-status-add" class="secondary" type="button">Add mapping</button>
+      <p class="error" id="lead-status-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button class="secondary" type="button" data-close="lead-status-dialog">Cancel</button><button class="primary" type="submit">Save mapping</button></div>
+    </form>
+  </dialog>
+  <dialog id="lead-detail-dialog">
+    <div class="lead-detail">
+      <div class="dialog-head"><h2 id="lead-detail-title">Lead record</h2><button class="icon-button" aria-label="Close" type="button" data-close="lead-detail-dialog">×</button></div>
+      <dl id="lead-detail-fields" class="metric-list"></dl>
+    </div>
+  </dialog>
+</body>
+</html>
