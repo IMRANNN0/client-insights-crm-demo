@@ -6,11 +6,11 @@ function metricValue(value, metric) {
   return display(value, unit === 'currency' ? 'spend' : metric);
 }
 
-function comparisonTooltip(metric, value, previous, compatible) {
+function comparisonTooltip(metric, value, previous, compatible, notes = []) {
   const report = state.report;
   const definition = metricDefinition(metric);
-  const lines = [definition?.definition || nameOf(metric)];
-  if (!$('compare').checked) return MetricTooltip('Metric definition', lines);
+  const lines = [definition?.definition || nameOf(metric), ...notes];
+  if (!$('compare').checked) return MetricTooltip('Metric details', lines);
   lines.push(
     'Current period ' + periodLabel(report.dates) + ' · ' + metricValue(value, metric),
     'Previous period ' + periodLabel(report.previous_dates) + ' · ' + metricValue(previous, metric),
@@ -19,7 +19,7 @@ function comparisonTooltip(metric, value, previous, compatible) {
   const change = compatible && value != null && previous > 0 ? (value / previous - 1) * 100 : null;
   if (!Number.isFinite(change)) {
     lines.push('Comparison needs complete values for both equal-length periods, a matching source and reporting scope, and a positive previous value.');
-    return MetricTooltip('— Comparison unavailable', lines);
+    return MetricTooltip('No comparison', lines);
   }
   const rounded = Math.round(Math.abs(change) * 100) / 100;
   const sign = rounded ? (change > 0 ? '+' : '−') : '';
@@ -56,17 +56,13 @@ function acquisitionKPI(metric, current, previous, label, primary) {
   const base = previous?.totals[metric];
   const complete = fullMetric(current, metric);
   const comparable = complete && fullMetric(previous, metric) && sameAdsProvenance(current, previous);
-  const foot = el('div', null, 'stat-source');
-  foot.append(SourceIndicator(label));
-  if (value == null || !complete) {
-    const reason = metric === 'spend' && current.money_issue ? current.money_issue
-      : value != null ? current.coverage[metric].covered_days + ' / ' + current.coverage[metric].total_days + ' dates with values'
-      : metric === 'reach' ? 'Requires one deduplicated export row'
-        : 'Missing or incompatible source values';
-    foot.append(el('small', reason));
-  }
-  return KPIStatCard(nameOf(metric), metricValue(value, metric), foot, primary ? 'featured' : '',
-    comparisonTooltip(metric, value, base, comparable));
+  const coverage = current?.coverage[metric];
+  const moneyIssue = metric === 'spend' && current?.money_issue;
+  const reason = moneyIssue || (value == null && metric === 'reach' ? 'Reach needs one deduplicated export row.'
+    : !complete && coverage ? `${coverage.covered_days} of ${coverage.total_days} days have recorded values.` : '');
+  const unavailable = value == null && (moneyIssue || coverage?.present > 0);
+  return KPIStatCard(nameOf(metric), unavailable ? 'N/A' : metricValue(value, metric), label, primary ? 'featured' : '',
+    comparisonTooltip(metric, value, base, comparable, [reason]), value != null && !complete ? 'partial' : undefined);
 }
 
 function selectAcquisition(ads, filters) {
@@ -113,7 +109,9 @@ function renderAcquisition() {
       ...platforms.map(item => [item.dimensions.ad_platform, item.label])]),
     makeFilter('Campaign', 'campaign', [['', 'All campaigns'], ...campaigns.map(item => [campaignKey(item), item.label])]),
   ]);
-  filterBar.append(el('p', 'Platform and campaign filters apply to ad metrics. Website and outcome totals use the selected site and dates.', 'help'));
+  filterBar.append(MetricTooltip('How these filters work', [
+    'Platform and campaign filters apply to ad metrics. Website and outcome totals use the selected site and dates.',
+  ]));
 
   const cards = el('div', null, 'cards');
   ['spend', 'impressions', 'link_clicks', 'reach'].forEach(metric => {
@@ -125,13 +123,13 @@ function renderAcquisition() {
   const cpc = linkBased ? 'link_cpc' : 'cpc';
   const clickType = linkBased ? 'link clicks' : 'reported clicks';
   const rateLabels = [
-    [ctr, 'CTR · ' + clickType],
-    [cpc, 'CPC · ' + clickType],
-    ['cpm', 'CPM · 1,000 impressions'],
+    [ctr, 'Click-through rate'],
+    [cpc, 'Cost per click'],
+    ['cpm', 'Cost per 1,000 impressions'],
   ];
   for (const [metric, title] of rateLabels) {
     const pair = el('div');
-    pair.append(el('dt', title), el('dd', metricValue(group.ratios[metric], metric)));
+    pair.append(el('dt', title), el('dd', group.ratios[metric] == null ? 'N/A' : metricValue(group.ratios[metric], metric)));
     efficiency.append(pair);
   }
 
@@ -142,20 +140,16 @@ function renderAcquisition() {
   const metricSelect = el('select');
   metricSelect.setAttribute('aria-label', 'Daily trend metric');
   const plot = el('div', null, 'trend');
-  const seriesSource = el('p', null, 'help');
-  const plotBody = el('div');
-  plotBody.append(plot, seriesSource);
   const updateTrend = () => {
     const [metric, data, source] = series.find(item => item[0] === metricSelect.value);
     filters.trend = metric;
-    renderSeries(plot, data.daily, dates, metric);
-    seriesSource.textContent = source + ' · ' + (metricDefinition(metric)?.unit === 'currency' ? site().currency : 'count');
+    renderSeries(plot, data.daily, dates, metric, undefined, source);
   };
   const defaultMetric = series.find(([metric, data]) => data.daily.some(row => row.values[metric] != null))?.[0] || 'spend';
   options(metricSelect, series.map(([metric]) => [metric, nameOf(metric)]), filters.trend || defaultMetric);
   metricSelect.addEventListener('change', updateTrend);
   updateTrend();
-  const trend = ChartPanel('Daily acquisition trend', 'Recorded values by reporting date', plotBody, metricSelect);
+  const trend = ChartPanel('Acquisition over time', 'Daily results by metric', plot, metricSelect);
 
   const sourceMeasures = el('dl', null, 'metric-list');
   for (const [metric, data] of [
@@ -167,8 +161,11 @@ function renderAcquisition() {
     title.append(el('small', source));
     sourceMeasures.append(title, el('dd', metricValue(data.totals[metric], metric)));
   }
-  const sources = ChartPanel('Measures by source', 'Delivery, website traffic, and recorded outcomes', sourceMeasures);
-  sources.append(el('p', 'Business outcomes are site totals. The campaign table uses ad-source attribution only.', 'help panel-help'));
+  const sources = ChartPanel('Results by source', 'Ad, website, and business totals', sourceMeasures);
+  sources.append(MetricTooltip('About these totals', [
+    'Business outcomes are site totals. The campaign table uses ad-source attribution only.',
+    'The click-through rate and cost per click use ' + clickType + '.',
+  ]));
 
   const grid = el('div', null, 'report-grid');
   grid.append(trend, sources);
@@ -214,7 +211,7 @@ function stageSource(stage) {
 }
 
 function renderFunnel() {
-  const {funnel, events, dates} = state.report;
+  const {funnel, events} = state.report;
   const target = $('funnel-report');
   const filters = state.events;
   const stages = funnel.stages;
@@ -242,15 +239,19 @@ function renderFunnel() {
     makeFilter('Event source', 'source', [['', 'All event sources'], ...eventSources.map(source => [source, source])]),
     makeFilter('Event name', 'name', [['', 'All events'], ...eventNames.map(name => [name, name])]),
   ]);
-  bar.append(el('p', 'Event filters apply to the explorer. Selecting an event-based funnel stage also limits the explorer to its event.', 'help'));
+  bar.append(MetricTooltip('How these filters work', [
+    'Event filters apply to the explorer. Selecting an event-based funnel stage also limits the explorer to its event.',
+  ]));
 
   const volumes = el('div', null, 'funnel-body');
   const overall = funnel.overall_ratio;
   const volumeSummary = el('div', null, 'funnel-summary');
-  volumeSummary.append(el('span', 'Overall period ratio'),
-    el('strong', overall == null ? '—' : display(overall * 100) + '%'),
-    el('span', 'Last stage ÷ first stage', 'help'));
-  volumes.append(volumeSummary, el('p', 'Ratios compare recorded volumes in the selected period. These imports contain aggregate counts, so individual conversion and drop-off are unavailable.', 'help'));
+  volumeSummary.append(el('span', 'Last stage as a share of the first'),
+    el('strong', overall == null ? 'N/A' : display(overall * 100) + '%'));
+  volumes.append(volumeSummary, MetricTooltip('How funnel ratios work', [
+    'The overall ratio divides the last stage volume by the first. Stage ratios compare volumes in the selected period.',
+    'These imports contain aggregate counts. Individual conversion and drop-off are unavailable.',
+  ]));
   const stageRows = el('ol', null, 'funnel-stages');
   const max = Math.max(1, ...stages.map(stage => stage.value || 0));
   stages.forEach((stage, index) => {
@@ -258,7 +259,7 @@ function renderFunnel() {
     const row = el('li', null, 'funnel-stage');
     const title = el('div', null, 'funnel-stage-heading');
     const identity = el('div');
-    identity.append(el('h3', stage.label), SourceIndicator(stageSource(stage)));
+    identity.append(el('span', String(index + 1), 'funnel-step'), el('h3', stage.label), SourceIndicator(stageSource(stage)));
     if (stage.event_name) identity.append(el('small', stage.event_name, 'help'));
     title.append(identity, el('strong', metricValue(stage.value, stage.metric)));
     row.append(title);
@@ -271,13 +272,17 @@ function renderFunnel() {
     }
     const details = el('div', null, 'funnel-stage-detail');
     const coverage = stage.total_days ? stage.covered_days + ' / ' + stage.total_days + ' days with values' : 'No reporting dates';
-    details.append(el('span', coverage, 'help'));
+    const status = stage.value == null && !stage.covered_days ? 'No data'
+      : stage.covered_days < stage.total_days ? 'Partial data' : '';
+    const coverageText = el('span', coverage, 'help');
+    if (status) coverageText.prepend(el('span', status, 'badge ' + (status === 'Partial data' ? 'warning' : 'neutral')));
+    details.append(coverageText);
     if (index) {
-      details.append(el('span', stage.ratio == null ? '— Stage ratio' : display(stage.ratio * 100) + '% of ' + stages[index - 1].label, 'help'));
-      details.append(el('span', stage.volume_difference == null ? '— Aggregate drop-off'
-        : stage.volume_difference < 0 ? display(-stage.volume_difference) + ' more than the previous stage'
+      if (stage.ratio != null) details.append(el('span', display(stage.ratio * 100) + '% of ' + stages[index - 1].label, 'help'));
+      if (stage.volume_difference != null) details.append(el('span',
+        stage.volume_difference < 0 ? display(-stage.volume_difference) + ' more than the previous stage'
           : display(stage.volume_difference) + ' fewer than the previous stage · aggregate drop-off', 'help'));
-      if (stage.reason) details.append(el('span', funnelReasons[stage.reason], 'help'));
+      if (stage.reason) details.append(MetricTooltip('Comparison unavailable', [funnelReasons[stage.reason]]));
     }
     row.append(details);
     stageRows.append(row);
@@ -285,7 +290,7 @@ function renderFunnel() {
   volumes.append(stageRows);
   if (!stages.length) volumes.append(EmptyState('No funnel stages configured', 'Choose which recorded metrics to use as stages.',
     'Configure reporting', openReportingConfig));
-  const funnelPanel = ChartPanel('Conversion funnel', periodLabel(dates) + ' · aggregate period volumes', volumes);
+  const funnelPanel = ChartPanel('Conversion funnel', 'Recorded volumes by stage', volumes);
 
   const eventRows = sourceRows.filter(row => !filters.name || filters.name === row.event_name);
   const eventContent = eventRows.length
@@ -298,8 +303,10 @@ function renderFunnel() {
     : EmptyState('No events for this selection', events.rows.length
       ? 'Choose a different source, event, or funnel stage.'
       : 'Choose dates with an event import or add an export with date, source, name, and count.', 'Import events', openImport);
-  const eventPanel = ChartPanel('Event explorer', periodLabel(dates) + ' · each source and event name is reported separately', eventContent);
-  eventPanel.append(el('p', 'Counts cover recorded rows only. Unique users are available for a single date when provided by that source. Daily unique users cannot be added across dates.', 'help panel-help'));
+  const eventPanel = ChartPanel('Event explorer', 'Events grouped by source and name', eventContent);
+  eventPanel.append(MetricTooltip('About event counts and unique users', [
+    'Counts cover recorded rows only. Unique users are available for a single date when provided by that source. Daily unique users cannot be added across dates.',
+  ]));
   target.replaceChildren(bar, funnelPanel, eventPanel);
 }
 

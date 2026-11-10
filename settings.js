@@ -31,7 +31,10 @@ function businessSettings(data) {
   for (const [key, label] of [['ads', 'Ad export label'], ['web', 'Website export label'], ['outcomes', 'Outcomes export label']]) {
     fields.append(labeled(label, configInput('source_' + key, config.source_labels[key], names[key], 80)));
   }
-  const help = el('p', 'The business name applies to every site under this client. The default period ends on the latest recorded date. The timezone describes source dates as exported.', 'help');
+  const help = MetricTooltip('About reporting settings', [
+    'The business name applies to every site under this client.',
+    'The default period ends on the latest recorded date. The timezone describes source dates as exported.',
+  ]);
   const lock = el('p', 'Imported monetary totals lock the site currency to preserve their original meaning.', 'help');
   lock.hidden = !currency_locked;
   const status = el('p', '', 'error');
@@ -88,27 +91,33 @@ function sourceInventory(data) {
       importDate(source.last_import), source.dates.length ? periodLabel(source.dates) : '—',
       [provenance, metrics].filter(Boolean).join(' · ') || '—', display(source.rows)];
   });
-  return ChartPanel('Data sources', 'Manual CSV uploads for sources such as Meta Ads and GA4. Ad platform labels come from mapped rows. Website labels are configured here.',
+  const panel = ChartPanel('Data sources', 'See which CSV sources are ready to use',
     DataTable('Data sources', ['Source', 'Status', 'Last import', 'Recorded dates', 'Available fields', 'Rows'], rows));
+  panel.append(MetricTooltip('About source labels', [
+    'Ad platform labels come from mapped rows. Website labels are configured in Business configuration.',
+  ]));
+  return panel;
 }
 
 function metricRegistry(data) {
   const priority = ['leads', 'qualified_leads', 'bookings', 'confirmed_sales', 'confirmed_enrollments'];
   const keys = [...new Set([...priority, ...Object.keys(data.metric_definitions)])];
+  const metricRow = (label, source, formula, definition, dateBasis) => [label, source,
+    MetricTooltip('View definition', [definition, 'Formula · ' + formula, 'Date basis · ' + dateBasis])];
   const rows = keys.map(key => {
     const metric = data.metric_definitions[key];
-    return [metric.label, sourceOf(metric.source), metric.formula, metric.definition, metric.date_basis];
+    return metricRow(metric.label, sourceOf(metric.source), metric.formula, metric.definition, metric.date_basis);
   });
   for (const [key, [label, definition]] of Object.entries(leadMetrics)) {
-    rows.push([label, 'CRM lead records', definition, 'Computed from distinct lead records.',
-      ['customers', 'confirmed_revenue'].includes(key) ? 'Lead creation date or recorded close date' : 'Lead creation date']);
+    rows.push(metricRow(label, 'CRM lead records', definition, 'Computed from distinct lead records.',
+      ['customers', 'confirmed_revenue'].includes(key) ? 'Lead creation date or recorded close date' : 'Lead creation date'));
   }
   for (const key of ['cpql', 'cac']) {
     const metric = data.financial_definitions[key];
-    rows.push([metric.label, financeSourceName(metric.source), metric.formula, metric.definition, metric.date_basis]);
+    rows.push(metricRow(metric.label, financeSourceName(metric.source), metric.formula, metric.definition, metric.date_basis));
   }
-  return ChartPanel('KPI definitions', 'Bookings count appointments. Qualified leads meet the CRM rules. Confirmed sales require a recorded outcome. Each definition keeps its own source.',
-    DataTable('KPI definitions', ['Metric', 'Source', 'Formula or rule', 'Definition', 'Date basis'], rows));
+  return ChartPanel('KPI definitions', 'Find the source, formula, and dates used for each metric',
+    DataTable('KPI definitions', ['Metric', 'Source', 'Calculation details'], rows));
 }
 
 function importLedger(imports) {
@@ -117,15 +126,16 @@ function importLedger(imports) {
     const details = el('div', null, 'import-validation');
     const status = {passed: 'Passed', warnings: 'Warnings'}[item.validation] || 'Legacy import';
     details.append(el('span', status, item.validation === 'passed' ? 'badge' : 'badge warning'));
-    if (item.invalid != null) details.append(el('small', `${item.invalid} errors · ${item.duplicates} duplicates · ${item.missing} missing`));
-    if (item.changes) details.append(el('small', `${item.changes.added} added · ${item.changes.updated} updated · ${item.changes.preserved} kept`));
     const evidence = Object.entries(item.provenance || {}).map(([field, values]) => `${nameOf(field)} · ${values.join(', ')}`);
     if (item.attribution_verified) evidence.push('Attribution verified by the import operator.');
-    if (evidence.length) details.append(MetricTooltip('Export scope', evidence));
+    const summary = [];
+    if (item.invalid != null) summary.push(`${item.invalid} errors · ${item.duplicates} duplicates · ${item.missing} missing`);
+    if (item.changes) summary.push(`${item.changes.added} added · ${item.changes.updated} updated · ${item.changes.preserved} kept`);
+    if (summary.length || evidence.length) details.append(MetricTooltip('Import details', [...summary, ...evidence]));
     if (warnings.length) details.append(MetricTooltip('View warnings', warnings));
     return [item.filename || 'Filename unavailable', importDate(item.at), settingsSourceNames[item.source], details, display(item.rows)];
   });
-  return ChartPanel('Import history', 'Saved batches for this site. Files with blocking validation errors stay in the import preview.',
+  return ChartPanel('Import history', 'Saved files and their validation results',
     rows.length ? DataTable('Import history', ['File', 'Imported at', 'Source', 'Validation', 'Rows saved'], rows)
       : el('p', 'No files have been imported for this site.', 'help'));
 }
@@ -133,15 +143,17 @@ function importLedger(imports) {
 function importQuality(imports) {
   const total = key => display(imports.reduce((count, item) => count + (item[key] || 0), 0));
   const checks = [
-    ['Duplicate records', `${total('duplicates')} duplicates removed from saved imports. Conflicting keys are blocked in preview.`],
-    ['Missing values', `${total('missing')} missing mapped values across saved imports. Required fields block a save.`],
-    ['Dates and currency', 'Preview checks the selected date format and CRM currency codes. Aggregate monetary CSVs require site currency confirmation.'],
-    ['Source separation', 'Each feed keeps its own measures. Ads conversions, website events, and CRM outcomes can describe the same activity and are reported separately.'],
+    ['Duplicates removed', total('duplicates'), 'Conflicting keys are blocked in the import preview.'],
+    ['Missing mapped values', total('missing'), 'Missing required fields block a save.'],
+    ['Dates and currency', 'Checked at import', 'Preview checks dates and CRM currency codes. Aggregate monetary CSVs require site currency confirmation.'],
+    ['Source separation', 'Reported separately', 'Ads conversions, website events, and CRM outcomes can describe the same activity. Each feed keeps its own measures.'],
   ];
   const list = el('dl', null, 'quality');
-  for (const [label, description] of checks) {
+  for (const [label, value, explanation] of checks) {
     const row = el('div', null, 'quality-row settings-quality-row');
-    row.append(el('dt', label), el('dd', description));
+    const detail = el('dd');
+    detail.append(MetricTooltip(value, [explanation]));
+    row.append(el('dt', label), detail);
     list.append(row);
   }
   return ChartPanel('Data quality', 'Validation rules and cumulative counts from saved batches.', list);

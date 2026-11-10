@@ -40,7 +40,7 @@ function leadMetricCard(metric, report) {
   else if (cohortOnly) lines.push('Available in Acquisition cohort.');
   else lines.push('Sales use the latest corrected CRM outcome and its recorded closing date.');
   if (metric === 'confirmed_revenue' && report.kpis.confirmed_revenue_note) lines.push(report.kpis.confirmed_revenue_note);
-  let summary = 'Metric definition';
+  let summary = 'Metric details';
   if ($('compare').checked && report.previous_dates?.length) {
     lines.push('Current · ' + periodLabel(report.dates) + ' · ' + leadValue(metric, value),
       'Previous · ' + periodLabel(report.previous_dates) + ' · ' + leadValue(metric, prior));
@@ -56,14 +56,18 @@ function leadMetricCard(metric, report) {
       lines.push(rate ? 'Change is measured in percentage points. Current rate minus previous rate.'
         : 'Change is current minus previous, divided by previous.');
     } else {
-      summary = '— Comparison unavailable';
+      summary = 'No comparison';
       lines.push('Changes require comparable outcomes in both periods and a positive prior value for relative change.');
     }
   }
-  const source = 'CRM lead records · ' + basis + (report.kpis[metric + '_partial'] ? ' · Incomplete coverage' : '');
-  const shown = metric === 'confirmed_revenue' && report.basis === 'sales' && value == null ? 'N/A' : leadValue(metric, value);
-  return KPIStatCard(label, shown, source,
-    metric === 'customers' ? 'featured' : '', MetricTooltip(summary, lines));
+  const partial = report.kpis[metric + '_partial']
+    || (metric === 'qualification_rate' && report.kpis.qualified_leads_partial)
+    || (metric === 'lead_to_customer_rate' && report.kpis.customers_partial);
+  const unavailable = value == null && (metric.endsWith('_rate') || report.basis === 'sales');
+  if (partial) lines.push(value == null ? 'Coverage is too incomplete to calculate this metric.'
+    : 'Coverage is incomplete. The value uses the records available.');
+  return KPIStatCard(label, unavailable ? 'N/A' : leadValue(metric, value), '',
+    metric === 'customers' ? 'featured' : '', MetricTooltip(summary, lines), partial ? 'partial' : undefined);
 }
 
 function leadFilter(label, key, choices, selected, defaultValue = '') {
@@ -125,17 +129,17 @@ function leadLifecycle(report) {
     row.append(label, meter, el('strong', display(count)));
     body.append(row);
   }
-  if (report.open_leads != null) content.append(el('p', display(report.open_leads) + ' open and pending at cutoff', 'help'));
+  if (report.open_leads != null) content.append(el('p', display(report.open_leads) + ' leads still open', 'lead-open-count'));
   content.append(body);
-  return ChartPanel('Lead lifecycle', 'One reporting category per lead. Lost and Unresponsive are separate outcomes.', content);
+  return ChartPanel('Lead lifecycle', 'Current mix by reporting status', content);
 }
 
 function leadTrend(report) {
   const chart = el('div', null, 'trend');
   const metric = report.basis === 'sales' ? 'customers' : 'leads';
-  renderSeries(chart, report.daily, report.dates, metric, 'count');
+  renderSeries(chart, report.daily, report.dates, metric, 'count', 'CRM');
   const title = report.basis === 'sales' ? 'Confirmed customers over time' : 'Leads over time';
-  return ChartPanel(title, leadBasisLabel(report.basis) + ' · imported CRM records', chart);
+  return ChartPanel(title, leadBasisLabel(report.basis), chart);
 }
 
 function leadOutcomesTable(title, description, groups, name, report) {
@@ -191,7 +195,7 @@ function leadQuality(report) {
     body.append(DataQualityIndicator(label, display(Number(count)) + ' records', false));
   }
   if (!flagged) body.append(el('p', 'No missing-field or source flags in this selection.', 'help'));
-  for (const note of quality.notes || []) body.append(el('p', note, 'help panel-help'));
+  if (quality.notes?.length) body.append(MetricTooltip('About these checks', quality.notes));
   return ChartPanel('Data quality', 'Coverage and missing fields in the reporting scope', body);
 }
 
@@ -277,10 +281,9 @@ function renderLeads() {
     return;
   }
   const cohort = report.basis === 'cohort';
-  const basisNote = el('p', cohort
-    ? 'Acquisition cohort · groups by lead creation date. Outcomes are measured at the end of each period. Rates use the filtered cohort, including open leads.'
-    : 'Sales activity · groups confirmed customers by the closing date in the latest corrected CRM records. Compare with Financials using the same dates and no CRM filters. Cohort conversion rates are unavailable in this view.',
-  'lead-basis-note help');
+  const basisNote = MetricTooltip(cohort ? 'About lead creation dates' : 'About sales close dates', [cohort
+    ? 'Groups by lead creation date. Outcomes are measured at the end of each period. Rates use the filtered cohort, including open leads.'
+    : 'Groups confirmed customers by their recorded closing date. Compare with Financials using the same dates and no CRM filters. Cohort conversion rates are unavailable in this view.']);
   const currentKnown = report.quality.current_known || report.quality.undated_records > 0
     ? el('p', 'Current-known outcomes · This selection includes undated CRM snapshots. Historical status and attribution may differ.', 'notice lead-basis-note')
     : null;
@@ -300,8 +303,8 @@ function renderLeads() {
       el('span', leadMetrics.qualified_to_customer_rate[1], 'help'));
     breakdowns.push(ChartPanel('Qualified-to-customer rate', 'Acquisition cohort · CRM lead records', rate));
   }
-  root.replaceChildren(leadFilters(report), basisNote, ...(currentKnown ? [currentKnown] : []), cards, grid, ...breakdowns, agingQuality,
-    leadRecordTable(report), leadImportHistory(report.imports || []));
+  root.replaceChildren(leadFilters(report), cards, basisNote, ...(currentKnown ? [currentKnown] : []), grid,
+    leadRecordTable(report), ...breakdowns, agingQuality, leadImportHistory(report.imports || []));
 }
 
 function renderLeadImportPreview(panel, result) {

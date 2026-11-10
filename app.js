@@ -23,12 +23,12 @@ const names = {
 };
 const monetary = new Set(['spend', 'reported_revenue', 'net_revenue', 'commission', 'confirmed_revenue']);
 const views = {
-  overview: ['Overview', 'BUSINESS PERFORMANCE', 'Review recorded performance for your selected business and site.'],
-  acquisition: ['Acquisition', 'ADS & TRAFFIC', 'Compare advertising delivery, website traffic, and business outcomes.'],
-  funnel: ['Funnel & Events', 'CONVERSIONS', 'Review configured funnel stages and events from your imported sources.'],
+  overview: ['Overview', 'BUSINESS PERFORMANCE', 'Your key results and trends for the selected period.'],
+  acquisition: ['Acquisition', 'ADS & TRAFFIC', 'See where traffic comes from and how your ads perform.'],
+  funnel: ['Funnel & Events', 'CONVERSIONS', 'See how volumes change across stages and explore recorded events.'],
   leads: ['Leads / Sales', 'CRM OUTCOMES', 'Track lead quality, pipeline outcomes, and confirmed sales.'],
-  financials: ['Financials', 'REVENUE & EFFICIENCY', 'Review recorded spend, business revenue, and paid acquisition efficiency.'],
-  settings: ['Data & Settings', 'WORKSPACE MANAGEMENT', 'Manage reporting preferences, CSV sources, and data quality.'],
+  financials: ['Financials', 'REVENUE & EFFICIENCY', 'Review ad spend, revenue, and acquisition costs.'],
+  settings: ['Data & Settings', 'WORKSPACE MANAGEMENT', 'Manage your workspace, data sources, and imports.'],
 };
 const withoutComparison = new Set(['funnel', 'settings', 'financials']);
 const state = {clients: [], profiles: {}, metrics: {}, clientId: '', siteId: '', report: null,
@@ -216,11 +216,16 @@ function metricCard(metric, primary = false) {
   const sameCoverage = coveredDays(source, dates) === daysBetween(dates)
     && coveredDays(source, previous_dates) === daysBetween(previous_dates)
     && (source !== 'ads' || sameAdsProvenance(state.report.acquisition.ads, state.report.previous_acquisition?.ads));
-  const detail = (monetary.has(metric) && state.report.acquisition?.[source]?.money_issue) || (value == null
-    ? current.coverage[metric]?.missing ? 'Missing source values' : 'Awaiting source data'
-    : `${sourceOf(source)} · recorded dates`);
-  return KPIStatCard(nameOf(metric), display(value, metric), detail, primary ? 'featured' : '',
-    comparisonTooltip(metric, value, base, sameCoverage));
+  const group = state.report.acquisition?.[source];
+  const issue = monetary.has(metric) && group?.money_issue;
+  const coverage = group?.coverage[metric];
+  const partial = value != null && (coverage
+    ? coverage.covered_days < coverage.total_days || coverage.missing
+    : current.coverage[metric]?.missing);
+  const detail = issue || (coverage && (partial || value == null)
+    ? `${coverage.covered_days} of ${coverage.total_days} days have recorded values.` : '');
+  return KPIStatCard(nameOf(metric), issue ? 'N/A' : display(value, metric), sourceOf(source), primary ? 'featured' : '',
+    comparisonTooltip(metric, value, base, sameCoverage, [detail]), partial ? 'partial' : undefined);
 }
 
 function renderReport() {
@@ -251,9 +256,10 @@ function renderReport() {
   const ads = data.acquisition?.ads;
   const roas = ads?.ratios.roas;
   $('cards').replaceChildren(metricCard(selected.outcome, true), metricCard('spend'), metricCard('sessions'),
-    KPIStatCard('Ad-platform ROAS', roas == null ? 'N/A' : `${display(roas)}×`,
-      ads?.money_issue || ads?.attribution_issue || (roas == null
-        ? 'Requires complete ad values and positive spend.' : 'Verified ad-attributed revenue / ad spend')));
+    KPIStatCard('Ad return (ROAS)', roas == null ? 'N/A' : `${display(roas)}×`, sourceOf('ads'), '',
+      MetricTooltip('Metric details', [metricDefinition('roas')?.definition,
+        ads?.money_issue || ads?.attribution_issue || (roas == null
+          ? 'Requires complete ad values and positive spend.' : 'Uses verified ad-attributed revenue.')])));
   const trend = $('trend-metric');
   const choices = [...new Set([selected.outcome, 'spend', 'sessions', ...Object.keys(totals).filter(key => data.current.coverage[key]?.present)])];
   options(trend, choices.map(key => [key, nameOf(key)]), selected.outcome);
@@ -269,7 +275,8 @@ function svg(tag, attrs) {
 }
 
 function renderChart() {
-  renderSeries($('chart'), state.report.current.daily, state.report.dates, $('trend-metric').value);
+  const metric = $('trend-metric').value;
+  renderSeries($('chart'), state.report.current.daily, state.report.dates, metric, undefined, sourceOf(metricSource(metric)));
 }
 
 function chartTicks(values, unit) {
@@ -287,17 +294,22 @@ function chartTicks(values, unit) {
   return Array.from({length: last - first + 1}, (_, index) => (first + index) * step);
 }
 
-function renderSeries(chart, daily, dates, metric, unit = metricDefinition(metric)?.unit) {
+function renderSeries(chart, daily, dates, metric, unit = metricDefinition(metric)?.unit, source) {
   chart.replaceChildren();
   const points = daily.map(item => [item.date, item.values[metric]]).filter(([, value]) => Number.isFinite(value));
   if (!points.length) {
-    chart.append(el('p', 'No complete daily values for this metric in the selected period.', 'muted empty-chart'));
+    chart.append(el('p', 'No daily values for this selection.', 'muted empty-chart'));
     return;
   }
-  const view = svg('svg', {viewBox: '0 0 660 235', role: 'img', 'aria-label': `Daily ${nameOf(metric)} trend`});
+  const metricName = nameOf(metric);
+  const legend = el('div', null, 'chart-legend');
+  legend.append(el('span', null, 'chart-key'), el('strong', metricName));
+  if (source) legend.append(el('span', source));
+  if (unit === 'currency' && site()?.currency) legend.append(el('span', site().currency));
+  const view = svg('svg', {viewBox: '0 0 660 255', role: 'img', 'aria-label': `Daily ${metricName} trend`});
   const ticks = chartTicks(points.map(([, value]) => value), unit);
   const min = ticks[0], max = ticks.at(-1);
-  const y = value => 190 - 158 * (value - min) / (max - min || 1);
+  const y = value => 207 - 180 * (value - min) / (max - min || 1);
   const base = Date.parse(dates[0]);
   const dayCount = daysBetween(dates);
   const x = day => dayCount === 1 ? 350 : 74 + ((Date.parse(day) - base) / 86400000) * 552 / Math.max(1, dayCount - 1);
@@ -318,13 +330,16 @@ function renderSeries(chart, daily, dates, metric, unit = metricDefinition(metri
     const title = svg('title', {}); title.textContent = `${day} · ${display(value, metric)}`;
     dot.append(title); view.append(dot);
   });
-  [...new Set(dates)].forEach((day, index) => {
-    const anchor = dayCount === 1 ? 'middle' : index ? 'end' : 'start';
-    const label = svg('text', {x: x(day), y: 218, 'text-anchor': anchor, class: 'chart-label'});
-    label.textContent = day;
+  const dateTicks = [...new Set(dates)];
+  if (dayCount >= 5) dateTicks.splice(1, 0, new Date(base + Math.floor((dayCount - 1) / 2) * 86400000).toISOString().slice(0, 10));
+  const shortDate = new Intl.DateTimeFormat('en', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+  dateTicks.forEach((day, index) => {
+    const anchor = dayCount === 1 ? 'middle' : !index ? 'start' : index === dateTicks.length - 1 ? 'end' : 'middle';
+    const label = svg('text', {x: x(day), y: 235, 'text-anchor': anchor, class: 'chart-label'});
+    label.textContent = dayCount === 1 ? day : shortDate.format(new Date(day));
     view.append(label);
   });
-  chart.append(view);
+  chart.append(legend, view);
   const valuesTable = el('details', null, 'chart-values');
   valuesTable.append(el('summary', 'Daily values'));
   valuesTable.addEventListener('toggle', () => {
@@ -344,9 +359,12 @@ function renderQuality() {
       ? state.report.events.rows.reduce((count, row) => count + row.missing_count_rows, 0)
       : state.metrics[source].reduce((count, metric) => count + (current.coverage[metric]?.missing || 0), 0);
     const detail = days ? `${days} of ${dayCount} dates recorded${missing ? ` · ${missing} missing values` : ''}` : 'No rows in this period';
-    return DataQualityIndicator(sourceOf(source), detail, days > 0 && days === dayCount && !missing);
+    return DataQualityIndicator(sourceOf(source), detail, days > 0 && days === dayCount && !missing, !days);
   });
-  $('quality').replaceChildren(...checks, el('p', 'Check gaps before comparing periods. Metrics with missing values are shown as —.', 'help'));
+  $('quality').replaceChildren(...checks, MetricTooltip('How to read data coverage', [
+    '0 is a recorded zero. A dash means no value was recorded. N/A means a metric could not be calculated for this selection.',
+    'Partial data covers only part of the period or has missing values. Check coverage before comparing periods.',
+  ]));
 }
 
 function renderDetails() {
@@ -354,7 +372,6 @@ function renderDetails() {
   const totals = current.totals;
   const sections = Object.entries(state.metrics).map(([source, metrics]) => {
     const details = el('details');
-    details.open = source === 'outcomes';
     details.append(el('summary', sourceOf(source)));
     const rows = metrics.map(key => [nameOf(key), display(totals[key], key)]);
     if (source === 'ads') {
@@ -643,6 +660,10 @@ $('menu').addEventListener('click', event => {
   const menu = event.currentTarget;
   menu.setAttribute('aria-expanded', String(menu.getAttribute('aria-expanded') !== 'true'));
 });
+$('report-filter-toggle').addEventListener('click', event => {
+  const control = event.currentTarget;
+  control.setAttribute('aria-expanded', String(control.getAttribute('aria-expanded') !== 'true'));
+});
 $('compare').addEventListener('change', () => { if (state.report) renderReport(); });
 $('config-button').addEventListener('click', openReportingConfig);
 $('add-stage').addEventListener('click', addConfigStage);
@@ -667,6 +688,7 @@ function initialize() {
     $('report-status').replaceChildren(ErrorState(error.message, initialize));
   });
 }
+initializeTheme();
 changeView(state.view);
 document.querySelectorAll('[data-soon]').forEach(ComingSoonNavigationItem);
 initialize();
