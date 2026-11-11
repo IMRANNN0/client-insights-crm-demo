@@ -195,7 +195,8 @@ function renderAcquisition() {
     DataTable('Ad platforms', ['Platform', 'Spend', 'Impressions', 'Link clicks', 'Dates'],
       platforms.map(row => [row.label, metricValue(row.totals.spend, 'spend'), metricValue(row.totals.impressions, 'impressions'),
         metricValue(row.totals.link_clicks, 'link_clicks'), row.covered_days + ' / ' + row.total_days]))) : null;
-  target.replaceChildren(filterBar, cards, efficiency, grid, campaignPanel, trafficPanel, ...(platformsPanel ? [platformsPanel] : []));
+  target.replaceChildren(filterBar, cards, efficiency, grid, campaignPanel,
+    ReportDisclosure('Traffic & platform breakdowns', ReportGrid([trafficPanel, platformsPanel], true)));
 }
 
 const funnelReasons = {

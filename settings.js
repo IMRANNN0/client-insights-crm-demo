@@ -162,5 +162,7 @@ function importQuality(imports) {
 function renderSettings() {
   const data = state.report;
   $('settings-report').replaceChildren(businessSettings(data), sourceInventory(data),
-    importQuality(data.imports), importLedger(data.imports), metricRegistry(data));
+    ReportDisclosure('Data quality checks', importQuality(data.imports)),
+    ReportDisclosure('Import history', importLedger(data.imports)),
+    ReportDisclosure('Metric reference', metricRegistry(data)));
 }

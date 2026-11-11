@@ -249,6 +249,7 @@ function renderReport() {
   for (const name of Object.keys(views)) $(name + '-report').hidden = state.view !== name;
   if (state.view === 'settings') return renderSettings();
   $('period').textContent = readablePeriod(data.dates) + (data.config?.timezone ? ' · ' + data.config.timezone : '');
+  $('date-range-label').textContent = readablePeriod(data.dates);
   if (state.view === 'acquisition') return renderAcquisition();
   if (state.view === 'funnel') return renderFunnel();
   if (state.view === 'leads') return renderLeads();
@@ -313,13 +314,15 @@ function renderSeries(chart, daily, dates, metric, unit = metricDefinition(metri
   legend.append(el('span', null, 'chart-key'), el('strong', metricName));
   if (source) legend.append(el('span', source));
   if (unit === 'currency' && site()?.currency) legend.append(el('span', site().currency));
-  const view = svg('svg', {viewBox: '0 0 760 255', role: 'img', 'aria-label': `Daily ${metricName} trend`});
+  const plotWidth = window.innerWidth <= 767 ? 360 : window.innerWidth <= 1000 ? 560 : 760;
+  const view = svg('svg', {viewBox: `0 0 ${plotWidth} 255`, role: 'img', tabindex: '0',
+    'aria-label': `Daily ${metricName} trend. Use left and right arrow keys to inspect values. Daily values table available below.`});
   const ticks = chartTicks(points.map(([, value]) => value), unit);
   const min = ticks[0], max = ticks.at(-1);
   const y = value => 207 - 180 * (value - min) / (max - min || 1);
   const base = Date.parse(dates[0]);
   const dayCount = daysBetween(dates);
-  const left = 58, right = 742;
+  const left = plotWidth === 360 ? 40 : 58, right = plotWidth - 18;
   const x = day => dayCount === 1 ? (left + right) / 2
     : left + ((Date.parse(day) - base) / 86400000) * (right - left) / Math.max(1, dayCount - 1);
   for (const value of ticks) {
@@ -348,7 +351,38 @@ function renderSeries(chart, daily, dates, metric, unit = metricDefinition(metri
     label.textContent = dayCount === 1 ? day : shortDate.format(new Date(day));
     view.append(label);
   });
-  chart.append(legend, view);
+  const frame = el('div', null, 'chart-frame');
+  const readout = el('output', null, 'chart-readout');
+  readout.hidden = true;
+  const marker = svg('circle', {r: 5, class: 'chart-active-dot', visibility: 'hidden'});
+  view.append(marker);
+  let active = points.length - 1;
+  const inspect = index => {
+    active = Math.max(0, Math.min(points.length - 1, index));
+    const [day, value] = points[active];
+    readout.replaceChildren(el('span', reportDate.format(new Date(day))), el('strong', display(value, metric)));
+    readout.hidden = false;
+    marker.setAttribute('cx', x(day));
+    marker.setAttribute('cy', y(value));
+    marker.setAttribute('visibility', 'visible');
+  };
+  const dismiss = () => { readout.hidden = true; marker.setAttribute('visibility', 'hidden'); };
+  view.addEventListener('pointermove', event => {
+    const bounds = view.getBoundingClientRect();
+    const position = (event.clientX - bounds.left) / bounds.width * plotWidth;
+    inspect(points.reduce((best, point, index) => Math.abs(x(point[0]) - position) < Math.abs(x(points[best][0]) - position) ? index : best, 0));
+  });
+  view.addEventListener('pointerleave', dismiss);
+  view.addEventListener('focus', () => inspect(active));
+  view.addEventListener('blur', dismiss);
+  view.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'Escape') return dismiss();
+    inspect(event.key === 'Home' ? 0 : event.key === 'End' ? points.length - 1 : active + (event.key === 'ArrowRight' ? 1 : -1));
+  });
+  frame.append(view, readout);
+  chart.append(legend, frame);
   const valuesTable = el('details', null, 'chart-values');
   valuesTable.append(el('summary', 'Daily values'));
   valuesTable.addEventListener('toggle', () => {
@@ -652,6 +686,7 @@ function changeView(view, focus = false) {
   $('config-button').hidden = view !== 'funnel';
   $('lead-status-button').hidden = view !== 'leads';
   $('date-form').hidden = view === 'settings';
+  $('date-picker').hidden = view === 'settings';
   $('compare-control').hidden = withoutComparison.has(view);
   if (changedReportType && site()) loadReport(...state.appliedDates);
   else if (state.report || !site()) renderReport();
@@ -689,6 +724,7 @@ $('client').addEventListener('change', event => chooseClient(event.target.value)
 $('site').addEventListener('change', event => chooseSite(event.target.value));
 $('date-form').addEventListener('submit', event => {
   event.preventDefault();
+  $('date-picker').open = false;
   if (state.view === 'leads') state.leads.page = 1;
   loadReport($('start').value, $('end').value);
 });
@@ -705,6 +741,14 @@ function initialize() {
     $('report-status').replaceChildren(ErrorState(error.message, initialize));
   });
 }
+let chartLayout = window.innerWidth <= 767 ? 'mobile' : window.innerWidth <= 1000 ? 'tablet' : 'desktop';
+window.addEventListener('resize', () => {
+  const next = window.innerWidth <= 767 ? 'mobile' : window.innerWidth <= 1000 ? 'tablet' : 'desktop';
+  if (next !== chartLayout) {
+    chartLayout = next;
+    if (state.report) renderReport();
+  }
+});
 initializeTheme();
 changeView(state.view);
 document.querySelectorAll('[data-soon]').forEach(ComingSoonNavigationItem);

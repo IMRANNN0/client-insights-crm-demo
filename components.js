@@ -82,6 +82,7 @@ function PageHeader(title, eyebrow, description) {
 
 function DateRangeFilter(dates = []) {
   [$('start').value = '', $('end').value = ''] = dates;
+  $('date-range-label').textContent = dates.length === 2 ? readablePeriod(dates) : 'Select dates';
 }
 
 function periodLabel(dates) {
@@ -131,10 +132,14 @@ function KPIStatCard(title, value, source, cls = '', explanation, status) {
       summary.textContent = 'Metric details';
     }
     summary.setAttribute('aria-label', `${title} · ${summary.textContent}`);
-    if (source) explanation.querySelector('div').append(el('p', 'Source · ' + source));
+    if (source && ![...explanation.querySelectorAll('p')].some(line => line.textContent.startsWith('Source · '))) {
+      explanation.querySelector('div').append(el('p', 'Source · ' + source));
+    }
     meta.append(explanation);
-  } else if (source) meta.append(el('small', source));
-  item.append(label, amount, meta);
+  }
+  item.append(label, amount);
+  if (source) item.append(el('small', source, 'stat-source'));
+  item.append(meta);
   return item;
 }
 
@@ -158,6 +163,12 @@ function ReportDisclosure(title, content) {
   body.append(content);
   disclosure.append(summary, body);
   return disclosure;
+}
+
+function ReportGrid(panels, balanced = false) {
+  const grid = el('div', null, 'report-grid' + (balanced ? ' balanced-grid' : ''));
+  grid.append(...panels.filter(Boolean));
+  return grid;
 }
 
 function DataTable(title, headers, rows) {
@@ -197,11 +208,32 @@ function DataTable(title, headers, rows) {
   return wrapper;
 }
 
+const filterDisclosureState = new Map();
+
 function FilterBar(label, fields) {
   const filters = el('div', null, 'filter-bar');
   filters.setAttribute('role', 'group');
   filters.setAttribute('aria-label', label);
-  filters.append(...fields);
+  let expanded = filterDisclosureState.get(label) || false;
+  const controls = el('div', null, 'filter-fields');
+  controls.id = 'filters-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  controls.append(...fields);
+  const toggle = button('Filter options', 'filter-bar-toggle quiet', () => {
+    expanded = !expanded;
+    filterDisclosureState.set(label, expanded);
+    toggle.setAttribute('aria-expanded', String(expanded));
+  });
+  toggle.setAttribute('aria-label', label);
+  toggle.setAttribute('aria-expanded', String(expanded));
+  toggle.setAttribute('aria-controls', controls.id);
+  const selections = fields.flatMap(field => {
+    const select = field.querySelector('select');
+    if (!select?.value) return [];
+    const selected = [...select.querySelectorAll('option')].find(option => option.value === select.value);
+    return selected ? [selected.textContent] : [];
+  });
+  if (selections.length) toggle.append(el('span', selections.join(' · '), 'filter-summary'));
+  filters.append(toggle, controls);
   return filters;
 }
 
@@ -219,7 +251,10 @@ function EmptyState(title, description, action, callback) {
 }
 
 function LoadingState() {
-  return EmptyState('Loading report', 'Reading the saved data for this selection.');
+  const panel = EmptyState('Loading report', 'Reading the saved data for this selection.');
+  panel.className += ' loading-state';
+  panel.setAttribute('role', 'status');
+  return panel;
 }
 
 function ErrorState(message, retry) {

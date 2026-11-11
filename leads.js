@@ -66,7 +66,7 @@ function leadMetricCard(metric, report) {
   const unavailable = value == null && (metric.endsWith('_rate') || report.basis === 'sales');
   if (partial) lines.push(value == null ? 'Coverage is too incomplete to calculate this metric.'
     : 'Coverage is incomplete. The value uses the records available.');
-  return KPIStatCard(label, unavailable ? 'N/A' : leadValue(metric, value), '',
+  return KPIStatCard(label, unavailable ? 'N/A' : leadValue(metric, value), 'CRM · ' + basis,
     metric === 'customers' ? 'featured' : '', MetricTooltip(summary, lines), partial ? 'partial' : undefined);
 }
 
@@ -287,8 +287,9 @@ function renderLeads() {
   const currentKnown = report.quality.current_known || report.quality.undated_records > 0
     ? el('p', 'Current-known outcomes · This selection includes undated CRM snapshots. Historical status and attribution may differ.', 'notice lead-basis-note')
     : null;
-  const cards = el('div', null, 'cards lead-kpis');
-  for (const metric of Object.keys(leadMetrics).slice(0, 6)) cards.append(leadMetricCard(metric, report));
+  const cards = el('div', null, 'cards lead-kpis' + (cohort ? '' : ' cards-two'));
+  const visibleMetrics = cohort ? Object.keys(leadMetrics).slice(0, 6) : ['customers', 'confirmed_revenue'];
+  for (const metric of visibleMetrics) cards.append(leadMetricCard(metric, report));
   const grid = el('div', null, 'report-grid');
   grid.append(leadTrend(report), leadLifecycle(report));
   const agingQuality = el('div', null, 'report-grid');
@@ -304,7 +305,8 @@ function renderLeads() {
     breakdowns.push(ChartPanel('Qualified-to-customer rate', 'Acquisition cohort · CRM lead records', rate));
   }
   root.replaceChildren(leadFilters(report), cards, basisNote, ...(currentKnown ? [currentKnown] : []), grid,
-    leadRecordTable(report), ...breakdowns, agingQuality, leadImportHistory(report.imports || []));
+    leadRecordTable(report), ReportDisclosure('Source & campaign performance', ReportGrid(breakdowns, true)),
+    ReportDisclosure('Lead aging & quality checks', agingQuality), leadImportHistory(report.imports || []));
 }
 
 function renderLeadImportPreview(panel, result) {
